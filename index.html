@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EA WRC Pace Note HUD</title>
+    
+    <!-- Leaflet CSS for Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        :root {
+            --bg-color: #0d0e15;
+            --card-bg: #161824;
+            --accent-green: #00e676;
+            --accent-yellow: #ffc107;
+            --accent-red: #ff3d00;
+            --accent-blue: #0984e3;
+            --accent-purple: #6c5ce7;
+            --text-main: #ffffff;
+            --text-sub: #a0a0a0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 { margin: 5px 0 2px 0; color: var(--accent-yellow); font-size: 1.4rem; text-align: center; }
+        p { color: var(--text-sub); font-size: 0.8rem; margin-top: 0; margin-bottom: 10px; text-align: center; }
+
+        .container {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        /* ADDRESS SEARCH BAR */
+        .search-container {
+            display: flex;
+            gap: 6px;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 2px solid #2a2e45;
+            background: var(--card-bg);
+            color: #fff;
+            font-size: 0.9rem;
+            outline: none;
+        }
+
+        .search-input:focus {
+            border-color: var(--accent-blue);
+        }
+
+        .btn-search {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent-blue);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        #map {
+            width: 100%;
+            height: 250px;
+            border-radius: 10px;
+            border: 2px solid #2a2e45;
+            box-sizing: border-box;
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent-blue);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        button:disabled { background: #2c2f40; color: #555; cursor: not-allowed; }
+        .btn-start { background: #00c853; }
+        .btn-stop { background: var(--accent-red) !important; }
+        .btn-reset { background: #636e72; }
+        .btn-fullscreen { background: var(--accent-purple); }
+        .btn-hud { background: #e84393; }
+
+        /* PACENOTE HUD DISPLAY CARD */
+        .hud-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            border: 2px solid #2a2e45;
+            position: relative;
+        }
+
+        .current-call {
+            font-size: 2.2rem;
+            font-weight: 900;
+            color: var(--accent-green);
+            min-height: 90px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed #3a3f58;
+            border-radius: 10px;
+            background: #06070a;
+            margin: 10px 0;
+            padding: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            line-height: 1.2;
+            transition: transform 0.2s ease;
+        }
+
+        .telemetry {
+            display: flex;
+            justify-content: space-around;
+            color: var(--text-sub);
+            font-size: 0.9rem;
+            transition: transform 0.2s ease;
+        }
+
+        .telemetry span {
+            color: white;
+            font-weight: bold;
+        }
+
+        .log-box {
+            height: 80px;
+            background: #050608;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 8px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #888;
+            text-align: left;
+        }
+
+        /* FULLSCREEN OVERLAY MODES */
+        .hud-fullscreen {
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 99999;
+            background: #000000 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 20px !important;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .hud-fullscreen .current-call {
+            font-size: 4.5rem !important;
+            min-height: 60vh !important;
+            border-color: #222 !important;
+            background: #000 !important;
+        }
+
+        .hud-fullscreen .telemetry {
+            font-size: 1.6rem !important;
+            margin-top: 20px;
+        }
+
+        /* MIRRORED HUD TRANSFORMATION FOR WINDSHIELD REFLECTION */
+        .hud-mirrored .current-call,
+        .hud-mirrored .telemetry {
+            transform: scaleX(-1);
+        }
+
+        .exit-fs-btn {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid #555;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-size: 1rem;
+            cursor: pointer;
+            z-index: 100000;
+        }
+
+        .hud-fullscreen .exit-fs-btn {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>EA WRC Pace Note Display</h1>
+        <p>Search address or tap map for Destination.</p>
+
+        <!-- Address Search Input -->
+        <div class="search-container">
+            <input type="text" id="address-input" class="search-input" placeholder="Enter destination address..." />
+            <button id="search-btn" class="btn-search">Search</button>
+        </div>
+
+        <div id="map"></div>
+
+        <div class="controls">
+            <button id="route-btn" disabled>Calculate Route</button>
+            <button id="start-btn" disabled>Start Stage</button>
+            <button id="reset-btn" class="btn-reset">Reset Stage</button>
+        </div>
+
+        <div class="hud-card" id="hud-card">
+            <button class="exit-fs-btn" id="exit-fs-btn">✕ Exit Fullscreen</button>
+            
+            <div id="pacenote-display" class="current-call">ACQUIRING GPS...</div>
+            
+            <div class="telemetry" id="telemetry-box">
+                <div>SPEED: <span id="speed">0</span> KM/H</div>
+                <div>NEXT NOTE: <span id="next-dist">--</span> M</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="fullscreen-btn" class="btn-fullscreen">Fullscreen HUD</button>
+            <button id="hud-mirror-btn" class="btn-hud">HUD Mirror Mode</button>
+        </div>
+
+        <div id="log" class="log-box">Requesting GPS location access...<br></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        let map, userMarker, destMarker, routePolyline;
+        let userPos = null;
+        let destPos = null;
+        let stageNotes = [];
+        let currentNoteIndex = 0;
+        let watchId = null;
+
+        const addressInput = document.getElementById('address-input');
+        const searchBtn = document.getElementById('search-btn');
+        const routeBtn = document.getElementById('route-btn');
+        const startBtn = document.getElementById('start-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        const hudMirrorBtn = document.getElementById('hud-mirror-btn');
+        const exitFsBtn = document.getElementById('exit-fs-btn');
+        const hudCard = document.getElementById('hud-card');
+        const display = document.getElementById('pacenote-display');
+        const speedDisplay = document.getElementById('speed');
+        const distDisplay = document.getElementById('next-dist');
+        const logBox = document.getElementById('log');
+
+        function log(msg) {
+            logBox.innerHTML += `> ${msg}<br>`;
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function updateDisplayNote(text) {
+            display.innerText = text;
+            log(`PACENOTE: [${text}]`);
+        }
+
+        function setDestination(lat, lng, label = "Destination") {
+            destPos = [lat, lng];
+            if (destMarker) map.removeLayer(destMarker);
+
+            destMarker = L.circleMarker(destPos, {
+                color: '#ff3d00',
+                fillColor: '#ff3d00',
+                fillOpacity: 0.9,
+                radius: 8
+            }).addTo(map).bindPopup(label).openPopup();
+
+            map.setView(destPos, 14);
+            routeBtn.disabled = false;
+            display.innerText = "DESTINATION SET";
+            log(`Destination assigned: ${label}`);
+        }
+
+        // --- ADDRESS GEOCODING SEARCH ---
+        async function searchAddress() {
+            const query = addressInput.value.trim();
+            if (!query) return;
+
+            log(`Searching address: "${query}"...`);
+            const geocodeUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`;
+
+            try {
+                const res = await fetch(geocodeUrl, {
+                    headers: { 'Accept-Language': 'en' }
+                });
+                const data = await res.json();
+
+                if (data && data.length > 0) {
+                    const result = data[0];
+                    const lat = parseFloat(result.lat);
+                    const lon = parseFloat(result.lon);
+                    setDestination(lat, lon, result.display_name.split(',')[0]);
+                } else {
+                    alert("Address not found. Try a different query.");
+                    log("Address lookup failed: No results found.");
+                }
+            } catch (err) {
+                alert("Failed to search address. Check connection.");
+                log("Geocoding service error.");
+            }
+        }
+
+        searchBtn.addEventListener('click', searchAddress);
+        addressInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') searchAddress();
+        });
+
+        // --- 1. INITIALIZE MAP & GEOLOCATION ---
+        function initMap() {
+            // Default center fallback (Paphos Area)
+            map = L.map('map').setView([34.77, 32.42], 12);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        userPos = [pos.coords.latitude, pos.coords.longitude];
+                        map.setView(userPos, 14);
+
+                        if (userMarker) map.removeLayer(userMarker);
+                        userMarker = L.marker(userPos).addTo(map).bindPopup("Start Point").openPopup();
+
+                        display.innerText = "ENTER ADDRESS OR TAP MAP";
+                        log("GPS locked successfully.");
+                    }, 
+                    (err) => {
+                        log("GPS Error (" + err.code + "): " + err.message);
+                        display.innerText = "TAP MAP TO SET START";
+                    }, 
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            } else {
+                log("Geolocation is not supported by your browser.");
+                display.innerText = "TAP MAP TO SET START";
+            }
+
+            map.on('click', (e) => {
+                const clickedPos = [e.latlng.lat, e.latlng.lng];
+
+                if (!userPos) {
+                    userPos = clickedPos;
+                    if (userMarker) map.removeLayer(userMarker);
+                    userMarker = L.marker(userPos).addTo(map).bindPopup("Start Point").openPopup();
+                    display.innerText = "ENTER ADDRESS OR TAP MAP";
+                    log("Manual start point assigned.");
+                } else {
+                    setDestination(clickedPos[0], clickedPos[1], "Custom Destination");
+                }
+            });
+        }
+
+        // --- 2. EA SPORTS WRC STYLED PACENOTE PARSER ---
+        function parseManeuverToPaceNote(step, distanceToNext) {
+            const maneuver = step.maneuver;
+            const type = maneuver.type;
+            const modifier = maneuver.modifier || "";
+
+            let direction = "";
+            let grade = "";
+            let extraModifier = "";
+
+            if (modifier.includes("left")) direction = "LEFT";
+            else if (modifier.includes("right")) direction = "RIGHT";
+
+            if (type.includes("hairpin") || modifier === "uturn") {
+                direction = modifier.includes("left") ? "LEFT" : "RIGHT";
+                grade = "1 HAIRPIN";
+            } else if (modifier.includes("sharp")) {
+                grade = "2";
+                extraModifier = " TIGHTENS";
+            } else if (type === "turn" && !modifier.includes("slight")) {
+                grade = "3";
+            } else if (modifier.includes("slight")) {
+                grade = "5";
+                extraModifier = " OPENS";
+            } else if (type === "fork") {
+                grade = "6";
+            } else {
+                grade = "4";
+            }
+
+            let callText = "";
+            if (direction) {
+                callText = `${direction} ${grade}${extraModifier}`;
+            } else if (type === "roundabout" || type === "rotary") {
+                callText = `ROUNDABOUT EXIT ${step.maneuver.exit || 1}`;
+            } else if (type === "arrive") {
+                callText = "FINISH STAGE";
+            } else {
+                callText = "FLAT OUT";
+            }
+
+            if (distanceToNext > 150) {
+                callText += ` INTO ${Math.round(distanceToNext / 50) * 50}`;
+            } else if (distanceToNext > 50) {
+                callText += " INTO";
+            }
+
+            return callText;
+        }
+
+        // --- 3. FETCH ROUTE ---
+        routeBtn.addEventListener('click', async () => {
+            if (!userPos || !destPos) return;
+
+            log("Fetching stage notes...");
+            const primaryUrl = `https://router.projectosrm.org/route/v1/driving/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?steps=true&overview=full&geometries=geojson`;
+            const fallbackUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${userPos[1]},${userPos[0]};${destPos[1]},${destPos[0]}?steps=true&overview=full&geometries=geojson`;
+
+            let responseData = null;
+
+            try {
+                let res = await fetch(primaryUrl);
+                if (!res.ok) throw new Error();
+                responseData = await res.json();
+            } catch (err) {
+                try {
+                    let res = await fetch(fallbackUrl);
+                    responseData = await res.json();
+                } catch (err2) {
+                    alert("Could not load stage notes. Check internet connection.");
+                    return;
+                }
+            }
+
+            if (!responseData || !responseData.routes.length) return;
+
+            const route = responseData.routes[0];
+            const steps = route.legs[0].steps;
+
+            // Draw route line
+            const coordinates = route.geometry.coordinates.map(c => [c[1], c[0]]);
+            if (routePolyline) map.removeLayer(routePolyline);
+            routePolyline = L.polyline(coordinates, { color: '#00e676', weight: 5 }).addTo(map);
+            map.fitBounds(routePolyline.getBounds());
+
+            // Build Stage Database
+            stageNotes = [];
+            steps.forEach((step, idx) => {
+                const nextDist = steps[idx + 1] ? steps[idx + 1].distance : 0;
+                const call = parseManeuverToPaceNote(step, nextDist);
+
+                stageNotes.push({
+                    lat: step.maneuver.location[1],
+                    lng: step.maneuver.location[0],
+                    call: call,
+                    radius: call.includes("HAIRPIN") ? 25 : 35
+                });
+            });
+
+            log(`Stage loaded with ${stageNotes.length} pacenotes.`);
+            startBtn.disabled = false;
+            startBtn.classList.add("btn-start");
+            display.innerText = "STAGE READY";
+        });
+
+        // --- 4. GPS TRACKING LOOP ---
+        function getDistanceMeters(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function handleGPSUpdate(position) {
+            const uLat = position.coords.latitude;
+            const uLng = position.coords.longitude;
+            const speed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+
+            userPos = [uLat, uLng];
+            if (userMarker) userMarker.setLatLng(userPos);
+
+            speedDisplay.innerText = speed;
+
+            if (currentNoteIndex >= stageNotes.length) {
+                updateDisplayNote("STAGE FINISHED");
+                stopNavigation();
+                return;
+            }
+
+            const activeNote = stageNotes[currentNoteIndex];
+            const dist = getDistanceMeters(uLat, uLng, activeNote.lat, activeNote.lng);
+            distDisplay.innerText = Math.round(dist);
+
+            const dynamicRadius = activeNote.radius + (speed * 0.5);
+
+            if (dist <= dynamicRadius) {
+                updateDisplayNote(activeNote.call);
+                currentNoteIndex++;
+            }
+        }
+
+        function startNavigation() {
+            updateDisplayNote("READY... 3, 2, 1, GO!");
+            currentNoteIndex = 0;
+            watchId = navigator.geolocation.watchPosition(handleGPSUpdate, (e) => log("GPS Error: " + e.message), {
+                enableHighAccuracy: true,
+                maximumAge: 0,
+                timeout: 5000
+            });
+            startBtn.innerText = "Stop Stage";
+            startBtn.classList.remove("btn-start");
+            startBtn.classList.add("btn-stop");
+        }
+
+        function stopNavigation() {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            watchId = null;
+            startBtn.innerText = "Start Stage";
+            startBtn.classList.remove("btn-stop");
+            startBtn.classList.add("btn-start");
+            log("Stage stopped.");
+        }
+
+        function resetStage() {
+            stopNavigation();
+            
+            if (routePolyline) map.removeLayer(routePolyline);
+            if (destMarker) map.removeLayer(destMarker);
+            
+            destPos = null;
+            stageNotes = [];
+            currentNoteIndex = 0;
+            addressInput.value = "";
+
+            routeBtn.disabled = true;
+            startBtn.disabled = true;
+            startBtn.innerText = "Start Stage";
+            startBtn.classList.remove("btn-stop", "btn-start");
+            
+            speedDisplay.innerText = "0";
+            distDisplay.innerText = "--";
+            
+            display.innerText = "ENTER ADDRESS OR TAP MAP";
+            log("Stage reset.");
+        }
+
+        startBtn.addEventListener('click', () => {
+            if (!watchId) startNavigation();
+            else stopNavigation();
+        });
+
+        resetBtn.addEventListener('click', resetStage);
+
+        // --- 5. FULLSCREEN & HUD MIRROR MODES ---
+        function enterFullscreen(isMirrored = false) {
+            hudCard.classList.add('hud-fullscreen');
+            if (isMirrored) {
+                hudCard.classList.add('hud-mirrored');
+            } else {
+                hudCard.classList.remove('hud-mirrored');
+            }
+
+            if (document.documentElement.requestFullscreen) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            }
+        }
+
+        function exitFullscreen() {
+            hudCard.classList.remove('hud-fullscreen', 'hud-mirrored');
+            if (document.exitFullscreen && document.fullscreenElement) {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+
+        fullscreenBtn.addEventListener('click', () => enterFullscreen(false));
+        hudMirrorBtn.addEventListener('click', () => enterFullscreen(true));
+        exitFsBtn.addEventListener('click', exitFullscreen);
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
